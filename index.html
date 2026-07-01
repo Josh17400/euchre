@@ -1006,10 +1006,16 @@ if (typeof module !== 'undefined') {
         const a = await actions([
           { label: 'Pass', cls: 'dim', value: 'pass' },
           { label: verb, value: 'call' },
-          { label: 'Alone', cls: 'gold', value: 'alone' },
         ], `${SUIT_NAME[upcard[1]]} showing — your call`);
         if (my !== matchToken) return;
-        if (a.v !== 'pass') { maker = 0; alone = a.v === 'alone'; }
+        if (a.v !== 'pass') {
+          const b = await actions([
+            { label: 'With Partner', value: 'partner' },
+            { label: 'Go Alone', cls: 'gold', value: 'alone' },
+          ], 'Play with your partner or go alone?');
+          if (my !== matchToken) return;
+          maker = 0; alone = b.v === 'alone';
+        }
       } else if (isRemote(p)) {
         const a = await remotePrompt(p, 'bid1', { up: upcard, isDealer: p === dealer });
         if (my !== matchToken) return;
@@ -1078,11 +1084,17 @@ if (typeof module !== 'undefined') {
           const btns = SUITS.filter(s => s !== upcard[1]).map(s => ({
             label: `${suitHtml(s)} ${SUIT_NAME[s]}`, value: s,
           }));
-          btns.push({ label: 'Alone', cls: 'gold', value: '_alone', toggle: true });
           if (!mustCall) btns.unshift({ label: 'Pass', cls: 'dim', value: 'pass' });
           const a = await actions(btns, mustCall ? 'Dealer is stuck — you must call' : 'Name trump or pass');
           if (my !== matchToken) return;
-          if (a.v !== 'pass') { maker = 0; trump = a.v; alone = a.alone; }
+          if (a.v !== 'pass') {
+            const b = await actions([
+              { label: 'With Partner', value: 'partner' },
+              { label: 'Go Alone', cls: 'gold', value: 'alone' },
+            ], 'Play with your partner or go alone?');
+            if (my !== matchToken) return;
+            maker = 0; trump = a.v; alone = b.v === 'alone';
+          }
         } else if (isRemote(p)) {
           const a = await remotePrompt(p, 'bid2', { excluded: upcard[1], mustCall });
           if (my !== matchToken) return;
@@ -1526,17 +1538,29 @@ if (typeof module !== 'undefined') {
     clientPrompt = m;
     SFX0.turn();
     if (m.kind === 'bid1') {
+      const aloneAsk = [
+        { label: 'With Partner', value: 'partner' },
+        { label: 'Go Alone', cls: 'gold', value: 'alone' },
+      ];
       actions([
         { label: 'Pass', cls: 'dim', value: 'pass' },
         { label: m.data.isDealer ? 'Pick It Up' : 'Order It Up', value: 'call' },
-        { label: 'Alone', cls: 'gold', value: 'alone' },
-      ], `${SUIT_NAME[m.data.up[1]]} showing — your call`).then(a => clientSendAction(m.reqId, { v: a.v }));
+      ], `${SUIT_NAME[m.data.up[1]]} showing — your call`).then(a => {
+        if (a.v === 'pass') return clientSendAction(m.reqId, { v: 'pass' });
+        actions(aloneAsk, 'Play with your partner or go alone?')
+          .then(b => clientSendAction(m.reqId, { v: b.v === 'alone' ? 'alone' : 'call' }));
+      });
     } else if (m.kind === 'bid2') {
       const btns = SUITS.filter(s => s !== m.data.excluded).map(s => ({ label: `${suitHtml(s)} ${SUIT_NAME[s]}`, value: s }));
-      btns.push({ label: 'Alone', cls: 'gold', value: '_alone', toggle: true });
       if (!m.data.mustCall) btns.unshift({ label: 'Pass', cls: 'dim', value: 'pass' });
-      actions(btns, m.data.mustCall ? 'You are stuck — you must call' : 'Name trump or pass')
-        .then(a => clientSendAction(m.reqId, { v: a.v, alone: a.alone }));
+      actions(btns, m.data.mustCall ? 'You are stuck — you must call' : 'Name trump or pass').then(a => {
+        if (a.v === 'pass') return clientSendAction(m.reqId, { v: 'pass' });
+        actions([
+          { label: 'With Partner', value: 'partner' },
+          { label: 'Go Alone', cls: 'gold', value: 'alone' },
+        ], 'Play with your partner or go alone?')
+          .then(b => clientSendAction(m.reqId, { v: a.v, alone: b.v === 'alone' }));
+      });
     } else if (m.kind === 'discard') {
       hands[0] = m.data.hand6.slice();
       say0('Pick a card to discard', 2500);
