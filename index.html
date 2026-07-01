@@ -202,6 +202,25 @@
   #sizeRow { display: flex; flex-direction: column; gap: 8px; }
   .obtn.locked { opacity: .38; pointer-events: none; }
 
+  /* ---- multiplayer ---- */
+  .mpin {
+    border: 0; border-radius: 10px; padding: 10px 12px; font-size: 16px; text-align: center;
+    background: rgba(255,255,255,.14); color: #fff; outline: none;
+    user-select: text; -webkit-user-select: text; width: 230px;
+  }
+  .mpin::placeholder { color: rgba(255,255,255,.55); }
+  .mpin:focus { background: rgba(255,255,255,.25); }
+  #mpJoinRow { display: flex; gap: 8px; align-items: center; }
+  #mpJoinRow .mpin { width: 112px; letter-spacing: 4px; text-transform: uppercase; }
+  #mpJoinRow .obtn { min-width: 0; padding: 10px 24px; }
+  .codechip { background: var(--gold); color: #222; border-radius: 10px; padding: 2px 12px; letter-spacing: 3px; }
+  #mpSeats { display: flex; flex-direction: column; gap: 7px; width: min(84vw, 340px); }
+  .mpSeatRow { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.10); border-radius: 10px; padding: 9px 12px; }
+  .mpSeatRow .sl { font-size: 11px; opacity: .7; width: 86px; text-align: left; }
+  .mpSeatRow .sn { flex: 1; text-align: left; font-weight: 600; font-size: 14px; }
+  .mpSeatRow .abtn { padding: 6px 14px; font-size: 13px; }
+  #mpStartBtn:disabled { opacity: .4; }
+
   /* ---- trophy room ---- */
   #shelfWall {
     background: linear-gradient(#5a3a1e, #462c14);
@@ -298,6 +317,7 @@
   </div>
   <button class="obtn" id="startBtn">New Game</button>
   <button class="obtn alt" id="tourStartBtn">Tournament</button>
+  <button class="obtn alt" id="mpBtn">Play with Friends</button>
   <button class="obtn alt" id="trophyBtn">🔒 Trophy Room</button>
   <button class="obtn alt" id="contBtn" style="display:none">Continue Match</button>
 </div>
@@ -310,6 +330,27 @@
   </div>
   <div class="sub" id="shelfHint"></div>
   <button class="obtn alt" id="trophyBack">Back</button>
+</div>
+
+<div class="overlay" id="mpSetup">
+  <h2>Play with Friends</h2>
+  <input id="mpName" class="mpin" placeholder="Your name" maxlength="12" autocomplete="off">
+  <button class="obtn" id="mpHostBtn">Host a Table</button>
+  <div id="mpJoinRow">
+    <input id="mpCode" class="mpin" placeholder="CODE" maxlength="4" autocomplete="off" autocapitalize="characters">
+    <button class="obtn" id="mpJoinBtn">Join</button>
+  </div>
+  <div class="sub" id="mpStatus"></div>
+  <button class="obtn alt" id="mpBack">Back</button>
+</div>
+
+<div class="overlay" id="mpLobby">
+  <h2>Table&nbsp;<span id="mpCodeShow" class="codechip"></span></h2>
+  <div class="sub">Friends join with this code</div>
+  <div id="mpSeats"></div>
+  <button class="obtn" id="mpStartBtn" style="display:none">Start Game</button>
+  <div class="sub" id="mpLobbyStatus"></div>
+  <button class="obtn alt" id="mpLeaveBtn">Leave Table</button>
 </div>
 
 <div class="overlay" id="tourSetup">
@@ -672,7 +713,24 @@ if (typeof module !== 'undefined') {
   let pendingAction = null; // resolver for action buttons
   let matchToken = 0;       // invalidates an abandoned match's async loop
 
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const TSCALE = /[?&]fast=1/.test(location.search) ? 0.08 : 1; // test hook
+  const sleep = ms => new Promise(r => setTimeout(r, ms * TSCALE));
+
+  // ---------- multiplayer state ----------
+  let mp = null;            // null | {mode:'host'|'client', code}
+  let peer = null;          // PeerJS instance
+  let conns = {};           // host: seat -> DataConnection
+  let lobbyConns = [];      // host: connections not yet seated
+  let clientConn = null;    // client: connection to host
+  let clientPrompt = null;  // client: active prompt message
+  let myName = 'Player';
+  let matchActive = false;
+  let currentTurn = null;
+  let kittyState = null;
+  let curPlays = [];
+  let pendingRemote = {};   // seat -> {reqId, resolve}
+  let reqCounter = 0;
+  const isRemote = p => !!conns[p];
 
   // ---------- sound (WebAudio synth, no files) ----------
   let actx = null, muted = false;
@@ -714,6 +772,12 @@ if (typeof module !== 'undefined') {
     $('sndBtn').textContent = m ? '🔇' : '🔊';
     store.set(Object.assign(store.get() || {}, { muted: m }));
   }
+  // hosting: mirror sounds to remote players ('turn' stays local — clients ding on their own prompts)
+  const SFX0 = {};
+  for (const k of Object.keys(SFX)) {
+    SFX0[k] = SFX[k];
+    SFX[k] = () => { SFX0[k](); if (mp && mp.mode === 'host' && k !== 'turn') mpSendAll({ t: 'ev', sfx: k }); };
+  }
 
   // ---------- persistence ----------
   const store = {
@@ -750,6 +814,7 @@ if (typeof module !== 'undefined') {
   }
 
   function renderSeats(turnSeat) {
+    currentTurn = turnSeat == null ? null : turnSeat;
     for (const p of [1, 2, 3]) {
       const backs = $('backs' + p);
       backs.innerHTML = '';
@@ -801,6 +866,7 @@ if (typeof module !== 'undefined') {
   function renderKitty(state) {
     // state: 'up' (upcard showing), 'down' (turned). 'gone'/null hide the kitty —
     // once trump is set the big center suit emblem takes its place.
+    kittyState = state;
     const k = $('kitty');
     k.innerHTML = '';
     if (!state || state === 'gone') { k.style.display = 'none'; return; }
@@ -832,6 +898,10 @@ if (typeof module !== 'undefined') {
 
   let msgTimer = null;
   function say(text, hold, big) {
+    if (mp && mp.mode === 'host') mpSendAll({ t: 'ev', say: [text, hold || 1600, !!big] });
+    say0(text, hold, big);
+  }
+  function say0(text, hold, big) {
     const m = $('msg');
     m.innerHTML = text;
     m.classList.toggle('big', !!big);
@@ -887,16 +957,29 @@ if (typeof module !== 'undefined') {
       await playHand(my);
       if (my !== matchToken) return;
       dealer = (dealer + 1) % 4;
-      if (!inTour) store.set(Object.assign(store.get() || {}, { diff, score, dealer, names: NAMES.slice(), inMatch: score[0] < WIN_SCORE && score[1] < WIN_SCORE }));
+      if (!inTour && !mp) store.set(Object.assign(store.get() || {}, { diff, score, dealer, names: NAMES.slice(), inMatch: score[0] < WIN_SCORE && score[1] < WIN_SCORE }));
     }
     if (my !== matchToken) return;
     const won = score[0] >= WIN_SCORE;
     if (inTour) { finishTourMatch(won); return; }
-    (won ? SFX.win : SFX.lose)();
+    (won ? SFX0.win : SFX0.lose)();
+    if (mp && mp.mode === 'host') {
+      matchActive = false;
+      const winTeam = won ? 0 : 1;
+      for (const s in conns) {
+        const seat = +s;
+        try {
+          conns[s].send({
+            t: 'gameover', youWin: team(seat) === winTeam,
+            score: seat % 2 === 0 ? score : [score[1], score[0]],
+          });
+        } catch (e) {}
+      }
+    }
     $('goTitle').textContent = won ? '🏆 You Win!' : 'They Win…';
     $('goScore').textContent = `Final score ${score[0]} – ${score[1]}`;
     $('gameover').classList.add('show');
-    store.set(Object.assign(store.get() || {}, { diff, names: NAMES.slice(), inMatch: false }));
+    if (!mp) store.set(Object.assign(store.get() || {}, { diff, names: NAMES.slice(), inMatch: false }));
   }
 
   async function playHand(my) {
@@ -906,7 +989,9 @@ if (typeof module !== 'undefined') {
     hands = [deck.slice(0, 5), deck.slice(5, 10), deck.slice(10, 15), deck.slice(15, 20)];
     kitty = deck.slice(20); upcard = kitty[3];
 
+    curPlays = [];
     renderScore(); renderTrump(); renderSeats(); renderHand(); clearTrick(); renderKitty('up');
+    syncAll();
     SFX.deal();
     say(`${NAMES[dealer]} deal${dealer === 0 ? '' : 's'} · ${suitHtml(upcard[1])} ${SUIT_NAME[upcard[1]]} up`, 2000);
     await sleep(1300);
@@ -915,7 +1000,7 @@ if (typeof module !== 'undefined') {
     // ----- bidding round 1 -----
     for (let i = 0; i < 4 && maker == null; i++) {
       const p = (dealer + 1 + i) % 4;
-      renderSeats(p);
+      renderSeats(p); syncAll();
       if (p === 0) {
         const verb = dealer === 0 ? 'Pick It Up' : 'Order It Up';
         const a = await actions([
@@ -925,6 +1010,15 @@ if (typeof module !== 'undefined') {
         ], `${SUIT_NAME[upcard[1]]} showing — your call`);
         if (my !== matchToken) return;
         if (a.v !== 'pass') { maker = 0; alone = a.v === 'alone'; }
+      } else if (isRemote(p)) {
+        const a = await remotePrompt(p, 'bid1', { up: upcard, isDealer: p === dealer });
+        if (my !== matchToken) return;
+        if (a && typeof a.v === 'string') {
+          if (a.v !== 'pass') { maker = p; alone = a.v === 'alone'; }
+        } else {
+          const d = decideBid1(hands[p], upcard, p, dealer, aiLevel(p));
+          if (d.call) { maker = p; alone = d.alone; }
+        }
       } else {
         await sleep(AI_DELAY);
         if (my !== matchToken) return;
@@ -949,10 +1043,17 @@ if (typeof module !== 'undefined') {
         if (dealer === 0) {
           hands[0] = hands[0].concat([upcard]);
           renderKitty('gone'); renderHand();
-          say('Pick a card to discard', 2500);
+          say0('Pick a card to discard', 2500);
           const c = await new Promise(res => { pendingCard = res; renderHand({ legal: hands[0].slice() }); });
           if (my !== matchToken) return;
           hands[0] = hands[0].filter(x => x !== c);
+        } else if (isRemote(dealer)) {
+          renderKitty('gone'); syncAll();
+          const h6 = hands[dealer].concat([upcard]);
+          const a = await remotePrompt(dealer, 'discard', { hand6: h6 });
+          if (my !== matchToken) return;
+          const disc = (a && h6.includes(a)) ? a : chooseDiscard(h6, trump, aiLevel(dealer));
+          hands[dealer] = h6.filter(x => x !== disc);
         } else {
           const h6 = hands[dealer].concat([upcard]);
           const disc = chooseDiscard(h6, trump, aiLevel(dealer));
@@ -972,7 +1073,7 @@ if (typeof module !== 'undefined') {
       for (let i = 0; i < 4 && maker == null; i++) {
         const p = (dealer + 1 + i) % 4;
         const mustCall = p === dealer;
-        renderSeats(p);
+        renderSeats(p); syncAll();
         if (p === 0) {
           const btns = SUITS.filter(s => s !== upcard[1]).map(s => ({
             label: `${suitHtml(s)} ${SUIT_NAME[s]}`, value: s,
@@ -982,6 +1083,15 @@ if (typeof module !== 'undefined') {
           const a = await actions(btns, mustCall ? 'Dealer is stuck — you must call' : 'Name trump or pass');
           if (my !== matchToken) return;
           if (a.v !== 'pass') { maker = 0; trump = a.v; alone = a.alone; }
+        } else if (isRemote(p)) {
+          const a = await remotePrompt(p, 'bid2', { excluded: upcard[1], mustCall });
+          if (my !== matchToken) return;
+          const validSuit = a && SUITS.includes(a.v) && a.v !== upcard[1];
+          if (validSuit) { maker = p; trump = a.v; alone = !!a.alone; }
+          else if (!a || a.v !== 'pass' || mustCall) {
+            const d = decideBid2(hands[p], upcard[1], aiLevel(p), mustCall);
+            if (d.call) { maker = p; trump = d.suit; alone = d.alone; }
+          }
         } else {
           await sleep(AI_DELAY);
           if (my !== matchToken) return;
@@ -1000,7 +1110,7 @@ if (typeof module !== 'undefined') {
       renderKitty('gone');
     }
 
-    renderTrump(); renderSeats(); renderHand();
+    renderTrump(); renderSeats(); renderHand(); syncAll();
     await sleep(500);
     if (my !== matchToken) return;
 
@@ -1010,21 +1120,27 @@ if (typeof module !== 'undefined') {
     for (let t = 0; t < 5; t++) {
       clearTrick();
       const plays = [];
+      curPlays = plays;
       const order = [];
       { let q = leader; for (let i = 0; i < activePlayers().length; i++) { order.push(q); q = nextActive(q); } }
       for (let i = 0; i < order.length; i++) {
         const p = order[i];
-        renderSeats(p);
+        renderSeats(p); syncAll();
         const led = plays.length ? effSuit(plays[0].c, trump) : null;
-        let c;
+        const legal = legalMoves(hands[p], led, trump);
+        let c = null;
         if (p === 0) {
-          const legal = legalMoves(hands[0], led, trump);
           $('hint').textContent = led ? '' : 'Your lead';
           SFX.turn();
           c = await new Promise(res => { pendingCard = res; renderHand({ legal }); });
           if (my !== matchToken) return;
-        } else {
-          await sleep(AI_DELAY + Math.random() * 250);
+        } else if (isRemote(p)) {
+          const a = await remotePrompt(p, 'card', { legal, lead: !led });
+          if (my !== matchToken) return;
+          if (a && legal.includes(a)) c = a;
+        }
+        if (!c && p !== 0) {
+          if (!isRemote(p)) { await sleep(AI_DELAY + Math.random() * 250); }
           if (my !== matchToken) return;
           c = chooseCard({
             hand: hands[p], trump, plays, seat: p, makerSeat: maker,
@@ -1038,6 +1154,7 @@ if (typeof module !== 'undefined') {
         plays.push({ p, c });
         placeTrickCard(p, c);
         if (p === 0) renderHand(); else renderSeats(p);
+        syncAll();
       }
       const wi = trickWinnerIdx(plays, trump);
       const winner = plays[wi].p;
@@ -1046,14 +1163,28 @@ if (typeof module !== 'undefined') {
       await sleep(700);
       if (my !== matchToken) return;
       SFX.trick();
-      say(`${winner === 0 ? 'You take' : NAMES[winner] + ' takes'} the trick &nbsp;·&nbsp; ${tricks[0]}–${tricks[1]}`, 1900);
+      if (mp && mp.mode === 'host') {
+        for (const s in conns) {
+          const seat = +s;
+          const who = winner === seat ? 'You take' : (winner === 0 ? myName + ' takes' : NAMES[winner] + ' takes');
+          const tv = seat % 2 === 0 ? `${tricks[0]}–${tricks[1]}` : `${tricks[1]}–${tricks[0]}`;
+          try { conns[s].send({ t: 'ev', say: [`${who} the trick &nbsp;·&nbsp; ${tv}`, 1900, false] }); } catch (e) {}
+        }
+        say0(`${winner === 0 ? 'You take' : NAMES[winner] + ' takes'} the trick &nbsp;·&nbsp; ${tricks[0]}–${tricks[1]}`, 1900);
+      } else {
+        say(`${winner === 0 ? 'You take' : NAMES[winner] + ' takes'} the trick &nbsp;·&nbsp; ${tricks[0]}–${tricks[1]}`, 1900);
+      }
       if (winner !== 0) {
         const nm = $('name' + winner);
         nm.classList.add('won');
         setTimeout(() => nm.classList.remove('won'), 1200);
       }
       $('trick').className = 'collect' + winner;
-      renderScore();
+      if (mp && mp.mode === 'host') {
+        for (const s in conns) { try { conns[s].send({ t: 'ev', collect: rotSeat(winner, +s) }); } catch (e) {} }
+      }
+      curPlays = [];
+      renderScore(); syncAll();
       await sleep(650);
       if (my !== matchToken) return;
       leader = winner;
@@ -1065,8 +1196,16 @@ if (typeof module !== 'undefined') {
     score[res.team] += res.points;
     const us = res.team === 0;
     (us ? SFX.good : SFX.bad)();
-    say(`${res.label}<br>${us ? 'MY TEAM' : 'OPPONENTS'} +${res.points}`, 2800, true);
-    renderScore(); renderTrump();
+    if (mp && mp.mode === 'host') {
+      for (const s in conns) {
+        const winSeat = team(+s) === res.team;
+        try { conns[s].send({ t: 'ev', say: [`${res.label}<br>${winSeat ? 'MY TEAM' : 'OPPONENTS'} +${res.points}`, 2800, true] }); } catch (e) {}
+      }
+      say0(`${res.label}<br>${us ? 'MY TEAM' : 'OPPONENTS'} +${res.points}`, 2800, true);
+    } else {
+      say(`${res.label}<br>${us ? 'MY TEAM' : 'OPPONENTS'} +${res.points}`, 2800, true);
+    }
+    renderScore(); renderTrump(); syncAll();
     await sleep(2300);
   }
 
@@ -1139,6 +1278,320 @@ if (typeof module !== 'undefined') {
   }
   $('trophyBtn').onclick = openTrophyRoom;
   $('trophyBack').onclick = () => { $('trophyRoom').classList.remove('show'); showMenu(); };
+
+  // ---------- multiplayer core ----------
+  function mpSendAll(m) { for (const s in conns) { try { conns[s].send(m); } catch (e) {} } }
+  function rotSeat(q, seat) { return q == null ? null : (q - seat + 4) % 4; }
+  function seatDisplayName(i) {
+    if (conns[i]) return conns[i].pname || 'Guest';
+    return i === 0 ? myName : NAMES[i];
+  }
+
+  function viewFor(seat) {
+    const v = {
+      names: [], counts: [],
+      dealer: rotSeat(dealer, seat), turn: rotSeat(currentTurn, seat),
+      maker: rotSeat(maker, seat), sitOut: rotSeat(sitOut, seat),
+      trump: trump || null, alone: !!alone,
+      score: seat % 2 === 0 ? score : [score[1], score[0]],
+      tricksV: tricks ? (seat % 2 === 0 ? tricks : [tricks[1], tricks[0]]) : [0, 0],
+      kitty: kittyState || null, upcard: upcard || null,
+      plays: curPlays.map(pl => ({ p: rotSeat(pl.p, seat), c: pl.c })),
+      myHand: hands ? hands[seat].slice() : [],
+    };
+    for (let i = 0; i < 4; i++) {
+      v.names[rotSeat(i, seat)] = i === seat ? 'You' : seatDisplayName(i);
+      v.counts[rotSeat(i, seat)] = hands ? hands[i].length : 0;
+    }
+    return v;
+  }
+  function syncAll() {
+    if (!mp || mp.mode !== 'host') return;
+    for (const s in conns) { try { conns[s].send({ t: 'state', v: viewFor(+s) }); } catch (e) {} }
+  }
+
+  function remotePrompt(seat, kind, data) {
+    if (!conns[seat]) return Promise.resolve(null);
+    return new Promise(res => {
+      const reqId = ++reqCounter;
+      pendingRemote[seat] = { reqId, resolve: res };
+      try { conns[seat].send({ t: 'prompt', reqId, kind, data }); }
+      catch (e) { delete pendingRemote[seat]; res(null); }
+    });
+  }
+
+  function loadPeerJS() {
+    return new Promise((res, rej) => {
+      if (window.Peer) return res();
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js';
+      s.onload = res;
+      s.onerror = () => rej(new Error('Could not load — check your internet connection'));
+      document.head.appendChild(s);
+    });
+  }
+  const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  function genCode() {
+    let c = '';
+    for (let i = 0; i < 4; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    return c;
+  }
+  const peerId = code => 'euchre-jp-' + code;
+
+  function mpStatus(t) { $('mpStatus').textContent = t; }
+
+  async function mpHost() {
+    mpStatus('Setting up table…');
+    try { await loadPeerJS(); } catch (e) { mpStatus(e.message); return; }
+    const codeParam = /[?&]mpcode=([a-z2-9]{4})/i.exec(location.search);
+    const code = codeParam ? codeParam[1].toUpperCase() : genCode();
+    peer = new Peer(peerId(code));
+    peer.on('open', () => {
+      mp = { mode: 'host', code };
+      conns = {}; lobbyConns = [];
+      showLobby();
+    });
+    peer.on('connection', setupHostConn);
+    peer.on('error', e => {
+      if (e.type === 'unavailable-id') { peer.destroy(); peer = null; mpHost(); }
+      else mpStatus('Connection error: ' + e.type);
+    });
+  }
+
+  function setupHostConn(conn) {
+    conn.on('data', m => hostHandle(conn, m));
+    conn.on('close', () => hostDrop(conn));
+    conn.on('error', () => hostDrop(conn));
+  }
+  function seatFallbackName(seat) {
+    const s = store.get();
+    return (s && s.names && s.names[seat]) || DEFAULT_NAMES[seat];
+  }
+  function hostDrop(conn) {
+    lobbyConns = lobbyConns.filter(c => c !== conn);
+    const seat = conn.seat;
+    if (seat != null && conns[seat] === conn) {
+      delete conns[seat];
+      NAMES[seat] = seatFallbackName(seat);
+      applyNames();
+      if (pendingRemote[seat]) { pendingRemote[seat].resolve(null); delete pendingRemote[seat]; }
+      if (matchActive) say(`${conn.pname || 'A player'} lost connection — AI takes over`, 2400);
+      sendLobby();
+    } else sendLobby();
+  }
+  function hostHandle(conn, m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'hello') {
+      conn.pname = String(m.name || 'Guest').slice(0, 12);
+      if (!lobbyConns.includes(conn) && conn.seat == null) lobbyConns.push(conn);
+      sendLobby();
+    } else if (m.t === 'sit') {
+      const seat = m.seat;
+      if ([1, 2, 3].includes(seat) && !conns[seat]) {
+        if (conn.seat != null && conns[conn.seat] === conn) {
+          delete conns[conn.seat];
+          NAMES[conn.seat] = seatFallbackName(conn.seat);
+        }
+        conn.seat = seat; conns[seat] = conn;
+        NAMES[seat] = conn.pname || 'Guest';
+        applyNames();
+        lobbyConns = lobbyConns.filter(c => c !== conn);
+        sendLobby();
+        if (matchActive) { try { conn.send({ t: 'start' }); conn.send({ t: 'state', v: viewFor(seat) }); } catch (e) {} }
+      }
+    } else if (m.t === 'action') {
+      const seat = conn.seat;
+      const pr = seat != null && pendingRemote[seat];
+      if (pr && pr.reqId === m.reqId) { delete pendingRemote[seat]; pr.resolve(m.value); }
+    }
+  }
+  function sendLobby() {
+    if (!mp || mp.mode !== 'host') return;
+    const seats = [0, 1, 2, 3].map(i => ({
+      name: conns[i] ? conns[i].pname : (i === 0 ? myName : NAMES[i]),
+      human: i === 0 || !!conns[i],
+    }));
+    const msg = { t: 'lobby', code: mp.code, seats };
+    for (const s in conns) { try { conns[s].send(Object.assign({ yourSeat: +s }, msg)); } catch (e) {} }
+    for (const c of lobbyConns) { try { c.send(Object.assign({ yourSeat: null }, msg)); } catch (e) {} }
+    renderLobby(Object.assign({ yourSeat: 0 }, msg));
+  }
+
+  function renderLobby(m) {
+    $('mpCodeShow').textContent = m.code;
+    const SEAT_LABEL = ['Host', 'Left seat', 'Partner seat', 'Right seat'];
+    const el = $('mpSeats');
+    el.innerHTML = '';
+    m.seats.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'mpSeatRow';
+      const who = m.yourSeat === i ? `${s.name} (you)` : s.human ? s.name : `${s.name} · AI`;
+      row.innerHTML = `<span class="sl">${SEAT_LABEL[i]}</span><span class="sn">${who}</span>`;
+      if (mp && mp.mode === 'client' && !s.human && i !== 0) {
+        const b = document.createElement('button');
+        b.className = 'abtn'; b.textContent = 'Sit';
+        b.onclick = () => clientConn.send({ t: 'sit', seat: i });
+        row.appendChild(b);
+      }
+      el.appendChild(row);
+    });
+    const seated = [1, 2, 3].some(i => m.seats[i].human);
+    if (mp && mp.mode === 'host') {
+      $('mpStartBtn').style.display = 'block';
+      $('mpStartBtn').disabled = !seated;
+      $('mpLobbyStatus').textContent = seated ? (matchActive ? 'Game in progress' : 'Ready when you are!') : 'Waiting for players to join…';
+    } else {
+      $('mpStartBtn').style.display = 'none';
+      $('mpLobbyStatus').textContent = m.yourSeat == null ? 'Pick a seat' : 'Waiting for the host to start…';
+    }
+    if (!matchActive) $('mpLobby').classList.add('show');
+  }
+  function showLobby() { $('mpSetup').classList.remove('show'); sendLobby(); }
+
+  async function mpJoin(code) {
+    mpStatus('Joining…');
+    try { await loadPeerJS(); } catch (e) { mpStatus(e.message); return; }
+    peer = new Peer();
+    peer.on('open', () => {
+      clientConn = peer.connect(peerId(code), { reliable: true });
+      clientConn.on('open', () => {
+        mp = { mode: 'client', code };
+        clientConn.send({ t: 'hello', name: myName });
+        $('mpSetup').classList.remove('show');
+      });
+      clientConn.on('data', clientHandle);
+      clientConn.on('close', () => {
+        if (mp && mp.mode === 'client') { mpTeardown(); say0('Lost connection to the table', 2600, true); showMenu(); }
+      });
+    });
+    peer.on('error', e => {
+      mpStatus(e.type === 'peer-unavailable' ? 'Table "' + code + '" not found' : 'Connection error: ' + e.type);
+    });
+  }
+
+  // ----- client side -----
+  function clientHandle(m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'lobby') renderLobby(m);
+    else if (m.t === 'start') {
+      matchToken++; matchActive = true; clientPrompt = null;
+      ['menu', 'mpLobby', 'gameover', 'tourOv'].forEach(id => $(id).classList.remove('show'));
+      clearTrick(); clearActions();
+    } else if (m.t === 'state') clientRender(m.v);
+    else if (m.t === 'ev') {
+      if (m.say) say0(m.say[0], m.say[1], m.say[2]);
+      if (m.sfx && SFX0[m.sfx]) SFX0[m.sfx]();
+      if (m.collect != null) {
+        $('trick').className = 'collect' + m.collect;
+        setTimeout(() => { $('trick').className = ''; }, 800 * TSCALE);
+      }
+    } else if (m.t === 'prompt') clientPromptShow(m);
+    else if (m.t === 'gameover') {
+      matchActive = false;
+      (m.youWin ? SFX0.win : SFX0.lose)();
+      $('goTitle').textContent = m.youWin ? '🏆 You Win!' : 'They Win…';
+      $('goScore').textContent = `Final score ${m.score[0]} – ${m.score[1]} · waiting for the host`;
+      $('againBtn').style.display = 'none';
+      $('goMenuBtn').textContent = 'Leave Table';
+      $('gameover').classList.add('show');
+    }
+  }
+  function clientRender(v) {
+    for (const p of [1, 2, 3]) NAMES[p] = v.names[p];
+    applyNames();
+    trump = v.trump; maker = v.maker; alone = v.alone; sitOut = v.sitOut;
+    dealer = v.dealer; score = v.score; tricks = v.tricksV; upcard = v.upcard;
+    hands = [v.myHand, new Array(v.counts[1]), new Array(v.counts[2]), new Array(v.counts[3])];
+    renderScore(); renderTrump(); renderSeats(v.turn); renderKitty(v.kitty);
+    const cur = ['', '', '', ''];
+    v.plays.forEach(pl => { cur[pl.p] = pl.c; });
+    let any = false;
+    for (let i = 0; i < 4; i++) {
+      const slot = $('slot' + i);
+      if ((slot.dataset.c || '') !== cur[i]) {
+        slot.dataset.c = cur[i];
+        slot.innerHTML = cur[i] ? `<img class="in${i}" src="${CARD_IMG[cur[i]]}" alt="${cur[i]}">` : '';
+      }
+      if (cur[i]) any = true;
+    }
+    if (any) $('trick').className = '';
+    if (!clientPrompt) renderHand();
+  }
+  function clientSendAction(reqId, value) {
+    clientPrompt = null;
+    try { clientConn.send({ t: 'action', reqId, value }); } catch (e) {}
+    renderHand(); clearActions();
+  }
+  function clientPromptShow(m) {
+    clientPrompt = m;
+    SFX0.turn();
+    if (m.kind === 'bid1') {
+      actions([
+        { label: 'Pass', cls: 'dim', value: 'pass' },
+        { label: m.data.isDealer ? 'Pick It Up' : 'Order It Up', value: 'call' },
+        { label: 'Alone', cls: 'gold', value: 'alone' },
+      ], `${SUIT_NAME[m.data.up[1]]} showing — your call`).then(a => clientSendAction(m.reqId, { v: a.v }));
+    } else if (m.kind === 'bid2') {
+      const btns = SUITS.filter(s => s !== m.data.excluded).map(s => ({ label: `${suitHtml(s)} ${SUIT_NAME[s]}`, value: s }));
+      btns.push({ label: 'Alone', cls: 'gold', value: '_alone', toggle: true });
+      if (!m.data.mustCall) btns.unshift({ label: 'Pass', cls: 'dim', value: 'pass' });
+      actions(btns, m.data.mustCall ? 'You are stuck — you must call' : 'Name trump or pass')
+        .then(a => clientSendAction(m.reqId, { v: a.v, alone: a.alone }));
+    } else if (m.kind === 'discard') {
+      hands[0] = m.data.hand6.slice();
+      say0('Pick a card to discard', 2500);
+      pendingCard = c => clientSendAction(m.reqId, c);
+      renderHand({ legal: m.data.hand6.slice() });
+    } else if (m.kind === 'card') {
+      $('hint').textContent = m.data.lead ? 'Your lead' : '';
+      pendingCard = c => clientSendAction(m.reqId, c);
+      renderHand({ legal: m.data.legal });
+    }
+  }
+
+  function mpTeardown() {
+    matchToken++;
+    mp = null; matchActive = false; clientPrompt = null;
+    conns = {}; lobbyConns = []; clientConn = null; pendingRemote = {};
+    if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+    $('mpLobby').classList.remove('show');
+    $('againBtn').style.display = 'block';
+    $('goMenuBtn').textContent = 'Menu';
+    restoreNames();
+  }
+
+  // ----- multiplayer menu wiring -----
+  $('mpBtn').onclick = () => {
+    readNameInputs();
+    const s = store.get();
+    if (s && s.myName) $('mpName').value = s.myName;
+    mpStatus('');
+    $('menu').classList.remove('show');
+    $('mpSetup').classList.add('show');
+  };
+  function grabName() {
+    myName = ($('mpName').value.trim() || 'Player').slice(0, 12);
+    store.set(Object.assign(store.get() || {}, { myName }));
+  }
+  $('mpHostBtn').onclick = () => { grabName(); mpHost(); };
+  $('mpJoinBtn').onclick = () => {
+    grabName();
+    const code = $('mpCode').value.trim().toUpperCase();
+    if (code.length === 4) mpJoin(code); else mpStatus('Enter the 4-letter table code');
+  };
+  $('mpBack').onclick = () => { mpTeardown(); $('mpSetup').classList.remove('show'); showMenu(); };
+  $('mpLeaveBtn').onclick = () => {
+    if (mp && mp.mode === 'host') { mpSendAll({ t: 'ev', say: ['Host closed the table', 2600, true] }); }
+    mpTeardown();
+    showMenu();
+  };
+  $('mpStartBtn').onclick = () => {
+    if (!mp || mp.mode !== 'host') return;
+    $('mpLobby').classList.remove('show');
+    mpSendAll({ t: 'start' });
+    matchActive = true;
+    playMatch(false);
+  };
 
   // ---------- tournament flow ----------
   function saveTour() { store.set(Object.assign(store.get() || {}, { tour })); }
@@ -1248,8 +1701,16 @@ if (typeof module !== 'undefined') {
     if (s && s.inMatch) { score = s.score; dealer = s.dealer; }
     playMatch(true);
   };
-  $('againBtn').onclick = () => { $('gameover').classList.remove('show'); playMatch(false); };
-  $('goMenuBtn').onclick = () => { $('gameover').classList.remove('show'); showMenu(); };
+  $('againBtn').onclick = () => {
+    $('gameover').classList.remove('show');
+    if (mp && mp.mode === 'host') { mpSendAll({ t: 'start' }); matchActive = true; }
+    playMatch(false);
+  };
+  $('goMenuBtn').onclick = () => {
+    $('gameover').classList.remove('show');
+    if (mp) { if (mp.mode === 'host') mpSendAll({ t: 'ev', say: ['Host closed the table', 2600, true] }); mpTeardown(); }
+    showMenu();
+  };
   $('menuBtn').onclick = () => $('confirm').classList.add('show');
   $('sndBtn').onclick = () => setMuted(!muted);
   $('confirmNo').onclick = () => $('confirm').classList.remove('show');
@@ -1257,6 +1718,7 @@ if (typeof module !== 'undefined') {
     matchToken++;
     pendingCard = null; pendingAction = null;
     if (inTour) { inTour = false; diff = baseDiff; restoreNames(); }
+    if (mp) { if (mp.mode === 'host') mpSendAll({ t: 'ev', say: ['Host closed the table', 2600, true] }); mpTeardown(); }
     $('confirm').classList.remove('show');
     showMenu();
   };
