@@ -96,6 +96,14 @@
   .seat.out { opacity: .35; }
 
   /* ---- center: kitty + trick ---- */
+  #trumpCenter {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: clamp(70px, 24vw, 130px); line-height: 1; pointer-events: none;
+    color: rgba(0, 0, 0, .30); text-shadow: 0 2px 12px rgba(0,0,0,.15);
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+  #trumpCenter.red { color: rgba(200, 30, 30, .38); }
+  #trumpCenter .tcl { font-size: 13px; font-weight: 800; letter-spacing: 3px; opacity: .9; }
   #center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
   #kitty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; }
   #kitty .kcard {
@@ -259,6 +267,7 @@
     <div class="seat" id="seat2"><div class="pname" id="name2"><span class="chip">D</span><span id="nmtxt2">North</span></div><div class="backs" id="backs2"></div></div>
     <div class="seat" id="seat1"><div class="pname" id="name1"><span class="chip">D</span><span id="nmtxt1">West</span></div><div class="backs" id="backs1"></div></div>
     <div class="seat" id="seat3"><div class="pname" id="name3"><span class="chip">D</span><span id="nmtxt3">East</span></div><div class="backs" id="backs3"></div></div>
+    <div id="trumpCenter"></div>
     <div id="center">
       <div id="kitty"></div>
       <div id="trick">
@@ -732,6 +741,12 @@ if (typeof module !== 'undefined') {
     if (trump == null) { b.innerHTML = ''; }
     else b.innerHTML = `${suitHtml(trump)} ${SUIT_NAME[trump]} · ${NAMES[maker]}`;
     $('aloneBadge').style.display = alone ? 'inline-block' : 'none';
+    const tc = $('trumpCenter');
+    if (trump == null) { tc.innerHTML = ''; tc.className = ''; }
+    else {
+      tc.innerHTML = `${SUIT_SYM[trump]}<span class="tcl">TRUMP</span>`;
+      tc.className = (trump === 'H' || trump === 'D') ? 'red' : '';
+    }
   }
 
   function renderSeats(turnSeat) {
@@ -784,10 +799,11 @@ if (typeof module !== 'undefined') {
   }
 
   function renderKitty(state) {
-    // state: 'up' (upcard showing), 'down' (turned), 'gone' (picked up / play started), null
+    // state: 'up' (upcard showing), 'down' (turned). 'gone'/null hide the kitty —
+    // once trump is set the big center suit emblem takes its place.
     const k = $('kitty');
     k.innerHTML = '';
-    if (!state) { k.style.display = 'none'; return; }
+    if (!state || state === 'gone') { k.style.display = 'none'; return; }
     k.style.display = 'block';
     for (let i = 0; i < 3; i++) {
       const d = document.createElement('div');
@@ -927,6 +943,7 @@ if (typeof module !== 'undefined') {
     if (maker != null) {
       trump = upcard[1];
       sitOut = alone ? partnerOf(maker) : null;
+      renderTrump();
       if (sitOut !== dealer) {
         // dealer takes the upcard and discards
         if (dealer === 0) {
