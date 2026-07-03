@@ -26,24 +26,14 @@
     background-color: #17472a;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color: #fff; user-select: none; -webkit-user-select: none; touch-action: manipulation;
-    position: fixed; inset: 0;
+    /* z-index:0 makes body a stacking context so table-skin star layers (z:-1)
+       paint above the felt but below all content */
+    position: fixed; inset: 0; z-index: 0;
   }
   #app {
     display: flex; flex-direction: column; height: 100dvh;
     padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
   }
-  @media (orientation: landscape) {
-    #topbar { padding-top: calc(env(safe-area-inset-top, 0px) + 3px); padding-bottom: 2px; }
-    .scorebox { padding: 2px 8px; }
-    .scorebox .pts { font-size: 16px; }
-    #actions { min-height: 38px; }
-    .abtn { padding: 7px 14px; font-size: 14px; }
-    #hand { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
-    #msg { top: 8%; }
-    .overlay h1 { font-size: 32px; }
-    .overlay { gap: 9px; }
-  }
-
   /* ---- top bar ---- */
   #topbar {
     display: flex; align-items: stretch; gap: 6px;
@@ -89,9 +79,6 @@
     font-size: 11px; font-weight: 600; background: rgba(0,0,0,.32);
     padding: 2px 9px; border-radius: 999px; display: flex; gap: 5px; align-items: center; white-space: nowrap;
   }
-  .pname .chip { background: var(--gold); color: #222; font-weight: 800; font-size: 9px;
-    border-radius: 50%; width: 13px; height: 13px; display: none; align-items: center; justify-content: center; }
-  .pname.dealer .chip { display: flex; }
   .pname.turn { box-shadow: 0 0 0 1.5px var(--gold); }
   .seat.out { opacity: .35; }
 
@@ -189,7 +176,7 @@
   .overlay {
     position: fixed; inset: 0; background: rgba(10, 30, 18, .88); z-index: 20;
     display: none; flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; text-align: center; padding: 24px;
+    gap: 14px; text-align: center; padding: 24px; overflow-y: auto;
   }
   .overlay.show { display: flex; }
   .overlay h1 { font-size: 44px; margin: 0; letter-spacing: 1px; text-shadow: 0 3px 10px rgba(0,0,0,.5); }
@@ -200,7 +187,10 @@
     background: var(--gold); color: #222; box-shadow: 0 3px 8px rgba(0,0,0,.4); min-width: 220px;
   }
   .obtn.alt { background: rgba(255,255,255,.16); color: #fff; }
-  #diffRow { display: flex; gap: 8px; }
+  #menuBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(84vw, 340px); }
+  #menuBtns .obtn { min-width: 0; padding: 12px 8px; font-size: 16px; }
+  #menuBtns .span2 { grid-column: 1 / -1; }
+  #diffRow { display: flex; gap: 8px; justify-content: center; }
   #sizeRow { display: flex; flex-direction: column; gap: 8px; }
   .obtn.locked { opacity: .38; pointer-events: none; }
 
@@ -253,16 +243,169 @@
   }
   #nameRow input::placeholder { color: rgba(255,255,255,.55); }
   #nameRow input:focus { background: rgba(255,255,255,.25); }
-  .dbtn {
+  .dbtn, #sndTgl {
     border: 0; border-radius: 12px; padding: 10px 18px; font-size: 15px; font-weight: 600;
     background: rgba(255,255,255,.14); color: #fff;
   }
-  .dbtn.sel { background: #fff; color: #1b4d2a; }
+  .dbtn.sel, #sndTgl.sel { background: #fff; color: #1b4d2a; }
+
+  /* ---- settings ---- */
+  #settings { justify-content: flex-start; gap: 12px;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 14px calc(env(safe-area-inset-bottom, 0px) + 22px); }
+  #settings > * { flex: 0 0 auto; }
+  .setSec { width: min(84vw, 340px); }
+  .setSec h3 { font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; opacity: .8;
+    margin: 4px 0 8px; text-align: left; }
+  #nameRow { margin: 0 auto; }
+  #sndRow { display: flex; align-items: center; justify-content: space-between;
+    background: rgba(255,255,255,.10); border-radius: 10px; padding: 7px 8px 7px 14px; font-size: 14px; font-weight: 600; }
+  #sndTgl { padding: 8px 16px; font-size: 14px; }
   #menuCards { display: flex; margin-bottom: 4px; }
   #menuCards img { width: 74px; border-radius: 7px; box-shadow: 0 4px 10px rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.7); }
   #menuCards img:nth-child(1) { transform: rotate(-12deg) translateX(10px); }
   #menuCards img:nth-child(2) { transform: rotate(0deg) translateY(-8px); z-index: 1; }
   #menuCards img:nth-child(3) { transform: rotate(12deg) translateX(-10px); }
+
+  /* ---- dealer / turn chips ---- */
+  .pchip {
+    width: 28px; height: 28px; border-radius: 50%; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+    box-shadow: 0 2px 5px rgba(0,0,0,.45);
+  }
+  .pchip.float {
+    /* placed via transform:translate so the .5s transition slides it seat to seat */
+    position: fixed; left: 0; top: 0; z-index: 15; pointer-events: none;
+    transition: transform .5s ease, opacity .3s;
+  }
+  .pchip.hide { opacity: 0; }
+  .pchip.pulse::after {
+    content: ''; position: absolute; inset: -3px; border-radius: 50%;
+    border: 2px solid var(--gold); animation: chipPing 1.1s ease-out infinite;
+  }
+  @keyframes chipPing { 0% { transform: scale(.75); opacity: 1; } 75%, 100% { transform: scale(1.8); opacity: 0; } }
+  .pchip.d.cs-classic { color: #4a3305; border: 1px solid #a8781a;
+    background: radial-gradient(circle at 50% 40%, #ffe9a8 0 32%, #edbf45 62%, transparent 63%),
+      repeating-conic-gradient(#c8901a 0 22.5deg, #ffedb3 22.5deg 45deg); }
+  .pchip.t.cs-classic { color: #2450b8; border: 1px solid #a9a28c;
+    background: radial-gradient(circle at 50% 40%, #fff 0 32%, #ece5d2 62%, transparent 63%),
+      repeating-conic-gradient(#3f66c9 0 22.5deg, #f4efe2 22.5deg 45deg); }
+  .pchip.d.cs-silver { color: #23272e; border: 1px solid #6f7885;
+    background: radial-gradient(circle at 50% 40%, #f6f8fb 0 32%, #bfc8d4 62%, transparent 63%),
+      repeating-conic-gradient(#7e8896 0 22.5deg, #e9edf3 22.5deg 45deg); }
+  .pchip.t.cs-silver { color: #eef2f7; border: 1px solid #566070;
+    background: radial-gradient(circle at 50% 40%, #7e8a9a 0 32%, #4d5665 62%, transparent 63%),
+      repeating-conic-gradient(#39404c 0 22.5deg, #aab4c2 22.5deg 45deg); }
+  .pchip.d.cs-neon { color: #23f3ff; border: 1px solid #23f3ff; text-shadow: 0 0 6px rgba(35,243,255,.9);
+    background: radial-gradient(circle at 50% 45%, #10161a 0 62%, transparent 63%),
+      repeating-conic-gradient(#0b0f12 0 30deg, #23f3ff 30deg 45deg);
+    box-shadow: 0 0 9px rgba(35,243,255,.75), 0 2px 5px rgba(0,0,0,.45); }
+  .pchip.t.cs-neon { color: #ff49e5; border: 1px solid #ff49e5; text-shadow: 0 0 6px rgba(255,73,229,.9);
+    background: radial-gradient(circle at 50% 45%, #140f16 0 62%, transparent 63%),
+      repeating-conic-gradient(#120b12 0 30deg, #ff49e5 30deg 45deg);
+    box-shadow: 0 0 9px rgba(255,73,229,.75), 0 2px 5px rgba(0,0,0,.45); }
+  .pchip.cs-galaxy { color: #fff; text-shadow: 0 1px 3px #000; }
+  .pchip.d.cs-galaxy { border: 1px solid #a08cff;
+    background: radial-gradient(1.5px 1.5px at 30% 28%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 66% 60%, #ffd9f6, transparent 90%),
+      radial-gradient(1.5px 1.5px at 48% 78%, #cfe0ff, transparent 90%),
+      radial-gradient(circle at 38% 32%, #8663ff 0, #47309c 45%, #17123a 80%); }
+  .pchip.t.cs-galaxy { border: 1px solid #f09cff;
+    background: radial-gradient(1.5px 1.5px at 34% 26%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 62% 64%, #d3f6ff, transparent 90%),
+      radial-gradient(1.5px 1.5px at 46% 80%, #ffd7fa, transparent 90%),
+      radial-gradient(circle at 38% 32%, #d963ff 0, #8a2fbf 45%, #2a1040 80%); }
+  .pchip.cs-galaxy::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(transparent 0 76%, rgba(255,255,255,.5) 88%, transparent 100%);
+    animation: chipSpin 3.2s linear infinite;
+  }
+  @keyframes chipSpin { to { transform: rotate(1turn); } }
+
+  /* ---- coins & marketplace ---- */
+  .coinChip { background: rgba(0,0,0,.35); border: 1px solid rgba(245,197,66,.55); color: var(--gold);
+    font-weight: 800; font-size: 14px; border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
+  #menuCoins { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 16px; }
+  #shop { justify-content: flex-start; overflow-y: auto; gap: 10px;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 14px calc(env(safe-area-inset-bottom, 0px) + 22px); }
+  #shop > * { flex: 0 0 auto; }
+  #shopHead { display: flex; align-items: center; gap: 12px; }
+  #shopHead h2 { margin: 0; }
+  .shopSec { width: min(92vw, 430px); }
+  .shopSec h3 { font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; opacity: .8;
+    margin: 4px 0 8px; text-align: left; }
+  .shopGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .shopItem { background: rgba(255,255,255,.08); border-radius: 12px; padding: 9px 6px 8px;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 6px; }
+  .shopItem.eq { outline: 1.5px solid rgba(245,197,66,.7); }
+  .shopItem .iname { font-size: 10.5px; font-weight: 600; line-height: 1.2; }
+  .bprev { width: 40px; border-radius: 4px; border: 1px solid rgba(255,255,255,.5); display: block; }
+  .tprev { width: 46px; height: 32px; border-radius: 6px; border: 1px solid rgba(255,255,255,.4); display: block; }
+  .cprev { display: flex; gap: 5px; padding: 9px 0; }
+  .sbtn { border: 0; border-radius: 8px; padding: 5px 10px; font-size: 11.5px; font-weight: 700;
+    background: var(--gold); color: #222; }
+  .sbtn.own { background: rgba(255,255,255,.22); color: #fff; }
+  .sbtn.on { background: transparent; color: var(--gold); }
+  .sbtn.cant { background: rgba(255,255,255,.10); color: rgba(255,255,255,.45); }
+
+  /* ---- table skins ---- */
+  html.tbl-midnight { background: #0c1c31; }
+  html.tbl-midnight body { background: radial-gradient(ellipse at 50% 35%, #2e5487 0%, #1b3a60 55%, #0c1c31 100%); background-color: #0c1c31; }
+  html.tbl-ruby { background: #3d0d15; }
+  html.tbl-ruby body { background: radial-gradient(ellipse at 50% 35%, #962c3c 0%, #6b1a28 55%, #3d0d15 100%); background-color: #3d0d15; }
+  html.tbl-slate { background: #14161a; }
+  html.tbl-slate body { background: radial-gradient(ellipse at 50% 35%, #454c58 0%, #2a2f37 55%, #14161a 100%); background-color: #14161a; }
+  html.tbl-walnut { background: #26140a; }
+  html.tbl-walnut body { background: radial-gradient(ellipse at 50% 35%, #8a5a2e 0%, #5e3a1c 55%, #26140a 100%); background-color: #26140a; }
+  html.tbl-space { background: #04060f; }
+  html.tbl-space body { background: radial-gradient(ellipse at 50% 35%, #1d2749 0%, #111631 55%, #04060f 100%); background-color: #04060f; }
+  html.tbl-space body::before, html.tbl-space body::after {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      radial-gradient(1.5px 1.5px at 12% 22%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 34% 9%, #dbe6ff, transparent 90%),
+      radial-gradient(1.5px 1.5px at 58% 30%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 79% 14%, #ffe9c9, transparent 90%),
+      radial-gradient(1px 1px at 90% 46%, #fff, transparent 90%),
+      radial-gradient(1.5px 1.5px at 68% 64%, #dbe6ff, transparent 90%),
+      radial-gradient(1px 1px at 22% 58%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 45% 80%, #ffe9c9, transparent 90%),
+      radial-gradient(1.5px 1.5px at 84% 86%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 8% 88%, #dbe6ff, transparent 90%);
+    animation: twinkle 4.5s ease-in-out infinite;
+  }
+  html.tbl-space body::after {
+    background-image:
+      radial-gradient(1px 1px at 18% 12%, #fff, transparent 90%),
+      radial-gradient(1.5px 1.5px at 42% 24%, #ffe9c9, transparent 90%),
+      radial-gradient(1px 1px at 66% 8%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 88% 28%, #dbe6ff, transparent 90%),
+      radial-gradient(1.5px 1.5px at 30% 42%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 74% 50%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 14% 72%, #ffe9c9, transparent 90%),
+      radial-gradient(1.5px 1.5px at 56% 68%, #fff, transparent 90%),
+      radial-gradient(1px 1px at 38% 92%, #dbe6ff, transparent 90%),
+      radial-gradient(1px 1px at 92% 78%, #fff, transparent 90%);
+    animation-delay: -2.2s;
+  }
+  @keyframes twinkle { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+  /* last so equal-specificity rules beat the base ones above */
+  @media (orientation: landscape) {
+    #topbar { padding-top: calc(env(safe-area-inset-top, 0px) + 3px); padding-bottom: 2px; }
+    .scorebox { padding: 2px 8px; }
+    .scorebox .pts { font-size: 16px; }
+    #actions { min-height: 38px; }
+    .abtn { padding: 7px 14px; font-size: 14px; }
+    #hand { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+    #msg { top: 8%; }
+    .overlay h1 { font-size: 32px; }
+    .overlay { gap: 9px; }
+    #menu { gap: 7px; padding: 12px 24px; }
+    #menuCards img { width: 52px; }
+    #menuBtns { gap: 7px; }
+    #menuBtns .obtn { padding: 8px; font-size: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -285,9 +428,9 @@
   </div>
 
   <div id="table">
-    <div class="seat" id="seat2"><div class="pname" id="name2"><span class="chip">D</span><span id="nmtxt2">North</span></div><div class="backs" id="backs2"></div></div>
-    <div class="seat" id="seat1"><div class="pname" id="name1"><span class="chip">D</span><span id="nmtxt1">West</span></div><div class="backs" id="backs1"></div></div>
-    <div class="seat" id="seat3"><div class="pname" id="name3"><span class="chip">D</span><span id="nmtxt3">East</span></div><div class="backs" id="backs3"></div></div>
+    <div class="seat" id="seat2"><div class="pname" id="name2"><span id="nmtxt2">North</span></div><div class="backs" id="backs2"></div></div>
+    <div class="seat" id="seat1"><div class="pname" id="name1"><span id="nmtxt1">West</span></div><div class="backs" id="backs1"></div></div>
+    <div class="seat" id="seat3"><div class="pname" id="name3"><span id="nmtxt3">East</span></div><div class="backs" id="backs3"></div></div>
     <div id="trumpCenter"></div>
     <div id="center">
       <div id="kitty"></div>
@@ -303,26 +446,55 @@
   <div id="hand"></div>
 </div>
 
+<div class="pchip d float hide cs-classic" id="dealerChip">D</div>
+<div class="pchip t float hide cs-classic" id="turnChip">T</div>
+
 <div class="overlay" id="menu">
+  <span class="coinChip" id="menuCoins">🪙 0</span>
   <div id="menuCards"></div>
   <h1>EUCHRE</h1>
-  <div class="sub">First to 10 &middot; Stick the Dealer</div>
-  <div id="diffRow">
-    <button class="dbtn" data-d="easy">Easy</button>
-    <button class="dbtn sel" data-d="normal">Normal</button>
-    <button class="dbtn" data-d="hard">Hard</button>
+  <div id="menuBtns">
+    <button class="obtn span2" id="startBtn">Play Now</button>
+    <button class="obtn span2" id="contBtn" style="display:none">Continue Match</button>
+    <button class="obtn alt" id="tourStartBtn">Tournament</button>
+    <button class="obtn alt" id="mpBtn">Play with Friends</button>
+    <button class="obtn alt" id="shopBtn">🛒 Marketplace</button>
+    <button class="obtn alt" id="trophyBtn">🔒 Trophy Room</button>
+    <button class="obtn alt span2" id="setBtn">⚙️ Settings</button>
   </div>
-  <div id="nameRow">
-    <input id="nm2" placeholder="Partner name (North)" maxlength="12" autocomplete="off">
-    <input id="nm1" placeholder="Left opponent (West)" maxlength="12" autocomplete="off">
-    <input id="nm3" placeholder="Right opponent (East)" maxlength="12" autocomplete="off">
+  <div class="sub" id="buildTag" style="opacity:.45;font-size:11px">build Jul 03, 09:01 AM</div>
+</div>
+
+<div class="overlay" id="settings">
+  <h2>Settings</h2>
+  <div class="setSec"><h3>Difficulty</h3>
+    <div id="diffRow">
+      <button class="dbtn" data-d="easy">Easy</button>
+      <button class="dbtn sel" data-d="normal">Normal</button>
+      <button class="dbtn" data-d="hard">Hard</button>
+    </div>
   </div>
-  <div class="sub" id="buildTag" style="opacity:.45;font-size:11px">build Jul 02, 01:03 AM</div>
-  <button class="obtn" id="startBtn">New Game</button>
-  <button class="obtn alt" id="tourStartBtn">Tournament</button>
-  <button class="obtn alt" id="mpBtn">Play with Friends</button>
-  <button class="obtn alt" id="trophyBtn">🔒 Trophy Room</button>
-  <button class="obtn alt" id="contBtn" style="display:none">Continue Match</button>
+  <div class="setSec"><h3>Names</h3>
+    <div id="nameRow">
+      <input id="nmMe" placeholder="Your name" maxlength="12" autocomplete="off">
+      <input id="nm2" placeholder="Partner name (North)" maxlength="12" autocomplete="off">
+      <input id="nm1" placeholder="Left opponent (West)" maxlength="12" autocomplete="off">
+      <input id="nm3" placeholder="Right opponent (East)" maxlength="12" autocomplete="off">
+    </div>
+  </div>
+  <div class="setSec"><h3>Sound</h3>
+    <div id="sndRow"><span>Sound effects</span><button id="sndTgl" class="sel">🔊 On</button></div>
+  </div>
+  <button class="obtn alt" id="setBack">Back</button>
+</div>
+
+<div class="overlay" id="shop">
+  <div id="shopHead"><h2>Marketplace</h2><span class="coinChip" id="shopCoins">🪙 0</span></div>
+  <div class="sub">Win tournaments to earn gold</div>
+  <div class="shopSec"><h3>Card Backs</h3><div class="shopGrid" id="shopBacks"></div></div>
+  <div class="shopSec"><h3>Table Skins</h3><div class="shopGrid" id="shopTables"></div></div>
+  <div class="shopSec"><h3>Chip Sets</h3><div class="shopGrid" id="shopChips"></div></div>
+  <button class="obtn alt" id="shopBack">Back</button>
 </div>
 
 <div class="overlay" id="trophyRoom">
@@ -773,6 +945,8 @@ if (typeof module !== 'undefined') {
   function setMuted(m) {
     muted = m;
     $('sndBtn').textContent = m ? '🔇' : '🔊';
+    $('sndTgl').textContent = m ? '🔇 Off' : '🔊 On';
+    $('sndTgl').classList.toggle('sel', !m);
     store.set(Object.assign(store.get() || {}, { muted: m }));
   }
   // hosting: mirror sounds to remote players ('turn' stays local — clients ding on their own prompts)
@@ -825,15 +999,16 @@ if (typeof module !== 'undefined') {
       for (let i = 0; i < n; i++) {
         const d = document.createElement('div');
         d.className = 'mini';
-        d.style.backgroundImage = `url(${CARD_IMG.BACK})`;
+        d.style.backgroundImage = `url(${cardBack()})`;
         backs.appendChild(d);
       }
       document.getElementById('seat' + p).classList.toggle('out', p === sitOut);
       const nm = $('name' + p);
-      nm.classList.toggle('dealer', dealer === p);
       nm.classList.toggle('turn', turnSeat === p);
       nm.classList.remove('won');
     }
+    chipsOn = true;
+    updateChips();
   }
 
   function sortHand(h) {
@@ -864,6 +1039,7 @@ if (typeof module !== 'undefined') {
       if (tappable) d.onclick = () => { if (pendingCard) { const r = pendingCard; pendingCard = null; r(c); } };
       el.appendChild(d);
     }
+    updateChips(); // hand width changed — re-anchor the seat-0 chips
   }
 
   function renderKitty(state) {
@@ -877,17 +1053,70 @@ if (typeof module !== 'undefined') {
     for (let i = 0; i < 3; i++) {
       const d = document.createElement('div');
       d.className = 'kcard';
-      d.style.backgroundImage = `url(${CARD_IMG.BACK})`;
+      d.style.backgroundImage = `url(${cardBack()})`;
       d.style.transform = `rotate(${(i - 1) * 3}deg)`;
       k.appendChild(d);
     }
     if (state === 'up' || state === 'down') {
       const u = document.createElement('div');
       u.className = 'kcard up' + (state === 'down' ? ' down' : '');
-      u.style.backgroundImage = `url(${state === 'down' ? CARD_IMG.BACK : CARD_IMG[upcard]})`;
+      u.style.backgroundImage = `url(${state === 'down' ? cardBack() : CARD_IMG[upcard]})`;
       k.appendChild(u);
     }
   }
+
+  // ---------- dealer / turn chips ----------
+  let chipsOn = false; // gates resize re-placement so chips stay hidden behind menus
+
+  function chipAnchor(seat, alt) {
+    // alt = turn chip's slot, offset so the two chips never overlap on one seat
+    if (seat === 0) {
+      const first = $('hand').firstElementChild;
+      let left, mid;
+      if (first) {
+        const r = first.getBoundingClientRect();
+        left = r.left; mid = r.top + r.height / 2;
+      } else {
+        const hr = $('hand').getBoundingClientRect();
+        const cw = Math.min(innerWidth * .165, 84, innerHeight * .13); // mirrors --cw
+        left = hr.left + hr.width / 2 - cw * 1.66; // ~left edge of a 5-card fan
+        mid = hr.top + hr.height / 2;
+      }
+      return [left - 34, mid - 14 + (alt ? -16 : 16)]; // stacked: turn above dealer
+    }
+    const r = $('name' + seat).getBoundingClientRect();
+    const y = r.top + r.height / 2 - 14;
+    const off = alt ? 32 : 0;
+    return [seat === 1 ? r.right + 6 + off : r.left - 34 - off, y];
+  }
+
+  function moveChip(el, xy) {
+    if (el.classList.contains('hide')) {
+      // snap into place while invisible, then fade in — no cross-screen slide
+      el.style.transition = 'none';
+      el.style.transform = `translate(${xy[0]}px,${xy[1]}px)`;
+      void el.offsetWidth;
+      el.style.transition = '';
+      el.classList.remove('hide');
+    } else el.style.transform = `translate(${xy[0]}px,${xy[1]}px)`;
+  }
+
+  function updateChips() {
+    const dc = $('dealerChip'), tc = $('turnChip');
+    if (!chipsOn || !hands) { dc.classList.add('hide'); tc.classList.add('hide'); return; }
+    moveChip(dc, chipAnchor(dealer, false));
+    if (currentTurn == null) tc.classList.add('hide');
+    else moveChip(tc, chipAnchor(currentTurn, true));
+    tc.classList.toggle('pulse', currentTurn === 0);
+  }
+
+  function hideChips() {
+    chipsOn = false;
+    $('dealerChip').classList.add('hide');
+    $('turnChip').classList.add('hide');
+  }
+  window.addEventListener('resize', updateChips);
+  window.addEventListener('orientationchange', () => setTimeout(updateChips, 60));
 
   function clearTrick() {
     for (let i = 0; i < 4; i++) $('slot' + i).innerHTML = '';
@@ -979,6 +1208,7 @@ if (typeof module !== 'undefined') {
         } catch (e) {}
       }
     }
+    hideChips();
     $('goTitle').textContent = won ? '🏆 You Win!' : 'They Win…';
     $('goScore').textContent = `Final score ${score[0]} – ${score[1]}`;
     $('gameover').classList.add('show');
@@ -1294,6 +1524,138 @@ if (typeof module !== 'undefined') {
   $('trophyBtn').onclick = openTrophyRoom;
   $('trophyBack').onclick = () => { $('trophyRoom').classList.remove('show'); showMenu(); };
 
+  // ---------- coins & marketplace ----------
+  const TOUR_COINS = { 4: 10, 8: 20, 16: 50 };
+  let equipped = { back: 'classic', table: 'classic', chips: 'classic' };
+
+  function getCoins() { const s = store.get(); return (s && s.coins) || 0; }
+  function addCoins(n) {
+    store.set(Object.assign(store.get() || {}, { coins: getCoins() + n }));
+    renderCoins();
+  }
+  function renderCoins() {
+    const t = '🪙 ' + getCoins();
+    $('menuCoins').textContent = t;
+    $('shopCoins').textContent = t;
+  }
+
+  const BACKS = [
+    { id: 'classic', name: 'Classic', price: 0 },
+    { id: 'crimson', name: 'Crimson Weave', price: 10 },
+    { id: 'emerald', name: 'Emerald Argyle', price: 10 },
+    { id: 'carbon', name: 'Carbon Fiber', price: 15 },
+    { id: 'filigree', name: 'Gold Filigree', price: 25 },
+    { id: 'aurora', name: 'Aurora', price: 35 },
+    { id: 'galaxy', name: 'Galaxy', price: 50 },
+  ];
+  const TABLES = [
+    { id: 'classic', name: 'Classic Green', price: 0, theme: '#17472a', sw: 'radial-gradient(ellipse at 50% 30%, #35854d, #17472a)' },
+    { id: 'midnight', name: 'Midnight Blue', price: 15, theme: '#0c1c31', sw: 'radial-gradient(ellipse at 50% 30%, #2e5487, #0c1c31)' },
+    { id: 'ruby', name: 'Ruby Room', price: 15, theme: '#3d0d15', sw: 'radial-gradient(ellipse at 50% 30%, #962c3c, #3d0d15)' },
+    { id: 'slate', name: 'Slate', price: 20, theme: '#14161a', sw: 'radial-gradient(ellipse at 50% 30%, #454c58, #14161a)' },
+    { id: 'walnut', name: 'Walnut', price: 25, theme: '#26140a', sw: 'radial-gradient(ellipse at 50% 30%, #8a5a2e, #26140a)' },
+    { id: 'space', name: 'Deep Space', price: 40, theme: '#04060f', sw: 'radial-gradient(ellipse at 50% 30%, #1d2749, #04060f)' },
+  ];
+  const CHIPSETS = [
+    { id: 'classic', name: 'Classic', price: 0 },
+    { id: 'silver', name: 'Silver Dollar', price: 10 },
+    { id: 'neon', name: 'Neon', price: 20 },
+    { id: 'galaxy', name: 'Galaxy', price: 30 },
+  ];
+
+  // procedural card backs — 240x441 matches CARD_IMG.BACK
+  const BK = body => `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='441' viewBox='0 0 240 441'>${body}</svg>`;
+  const BACK_SVGS = {
+    crimson: () => BK(`<defs><pattern id='p' width='24' height='24' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'><rect width='24' height='24' fill='#8e1626'/><path d='M0 6h24M0 18h24' stroke='#ab2439' stroke-width='6'/><path d='M0 12h24' stroke='#6b0d1a' stroke-width='2.5'/></pattern></defs><rect width='240' height='441' fill='#4a0810'/><rect x='9' y='9' width='222' height='423' rx='12' fill='url(#p)'/><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='#e9b949' stroke-width='3'/><rect x='16' y='16' width='208' height='409' rx='8' fill='none' stroke='#e9b949' stroke-width='1'/><circle cx='120' cy='220.5' r='42' fill='#4a0810' stroke='#e9b949' stroke-width='2.5'/><path d='M120 186l26 34.5-26 34.5-26-34.5z' fill='none' stroke='#e9b949' stroke-width='1.5'/><path d='M120 199l16 21.5-16 21.5-16-21.5z' fill='#e9b949'/>`),
+    emerald: () => BK(`<defs><pattern id='p' width='56' height='92' patternUnits='userSpaceOnUse'><rect width='56' height='92' fill='#0d3b21'/><path d='M28 0 56 46 28 92 0 46Z' fill='#187f40'/><path d='M28 22 42 46 28 70 14 46Z' fill='#0f5c2e'/><path d='M0 0 56 92M56 0 0 92' stroke='rgba(255,255,255,.5)' stroke-width='1.2' stroke-dasharray='5 4'/></pattern></defs><rect width='240' height='441' fill='#08240f'/><rect x='9' y='9' width='222' height='423' rx='12' fill='url(#p)'/><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='#e7dfbe' stroke-width='3'/><rect x='16' y='16' width='208' height='409' rx='8' fill='none' stroke='rgba(231,223,190,.7)' stroke-width='1'/>`),
+    carbon: () => BK(`<defs><linearGradient id='a' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#3d434c'/><stop offset='1' stop-color='#1e2228'/></linearGradient><linearGradient id='b' x1='0' y1='0' x2='1' y2='0'><stop offset='0' stop-color='#2b3038'/><stop offset='1' stop-color='#13161b'/></linearGradient><pattern id='p' width='16' height='16' patternUnits='userSpaceOnUse'><rect width='16' height='16' fill='#0d0f13'/><rect width='8' height='8' fill='url(#a)'/><rect x='8' y='8' width='8' height='8' fill='url(#a)'/><rect x='8' width='8' height='8' fill='url(#b)'/><rect y='8' width='8' height='8' fill='url(#b)'/></pattern></defs><rect width='240' height='441' fill='#0a0c0f'/><rect x='9' y='9' width='222' height='423' rx='12' fill='url(#p)'/><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='#98a2b0' stroke-width='2.5'/><rect x='15' y='15' width='210' height='411' rx='9' fill='none' stroke='#3c434c' stroke-width='1'/><path d='M120 193l24 13.8v27.4L120 248l-24-13.8v-27.4z' fill='none' stroke='#aeb8c6' stroke-width='2'/><path d='M120 205l13.5 7.8v15.4L120 236l-13.5-7.8v-15.4z' fill='none' stroke='#5c6672' stroke-width='1.5'/>`),
+    filigree: () => BK(`<defs><g id='c' fill='none' stroke='#d9a63a'><path d='M22 74Q22 22 74 22' stroke-width='2.5'/><path d='M27 92Q27 27 92 27' stroke-width='1'/><circle cx='40' cy='40' r='4.5' fill='#d9a63a' stroke='none'/></g><path id='q' d='M120 172q14 24 0 48q-14-24 0-48' fill='#d9a63a'/></defs><rect width='240' height='441' fill='#141830'/><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='#d9a63a' stroke-width='3'/><rect x='17' y='17' width='206' height='407' rx='8' fill='none' stroke='#d9a63a' stroke-width='1'/><use href='#c'/><use href='#c' transform='matrix(-1 0 0 1 240 0)'/><use href='#c' transform='matrix(1 0 0 -1 0 441)'/><use href='#c' transform='matrix(-1 0 0 -1 240 441)'/><use href='#q'/><use href='#q' transform='rotate(45 120 220.5)'/><use href='#q' transform='rotate(90 120 220.5)'/><use href='#q' transform='rotate(135 120 220.5)'/><use href='#q' transform='rotate(180 120 220.5)'/><use href='#q' transform='rotate(225 120 220.5)'/><use href='#q' transform='rotate(270 120 220.5)'/><use href='#q' transform='rotate(315 120 220.5)'/><circle cx='120' cy='220.5' r='13' fill='#141830' stroke='#d9a63a' stroke-width='2'/><circle cx='120' cy='220.5' r='5' fill='#d9a63a'/>`),
+    aurora: () => BK(`<defs><linearGradient id='k' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#020512'/><stop offset='.6' stop-color='#07173a'/><stop offset='1' stop-color='#0b2b52'/></linearGradient><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#43ffb0' stop-opacity='.9'/><stop offset='1' stop-color='#43ffb0' stop-opacity='0'/></linearGradient><linearGradient id='h' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#5fd4ff' stop-opacity='.75'/><stop offset='1' stop-color='#5fd4ff' stop-opacity='0'/></linearGradient><linearGradient id='i' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#b48cff' stop-opacity='.7'/><stop offset='1' stop-color='#b48cff' stop-opacity='0'/></linearGradient></defs><rect width='240' height='441' fill='url(#k)'/><ellipse cx='120' cy='110' rx='170' ry='120' fill='url(#g)' opacity='.22'><animateTransform attributeName='transform' type='translate' values='0 0;0 26;0 0' dur='13s' repeatCount='indefinite'/></ellipse><path d='M-20 10C30 60 10 160 60 240C30 140 70 70 40 0z' fill='url(#g)'><animateTransform attributeName='transform' type='translate' values='0 0;30 16;0 0' dur='9s' repeatCount='indefinite'/></path><path d='M90 -10C130 80 100 190 150 270C130 160 170 80 140 -10z' fill='url(#h)'><animateTransform attributeName='transform' type='translate' values='0 0;-24 22;0 0' dur='11s' repeatCount='indefinite'/></path><path d='M190 0C230 70 200 170 250 250C240 150 270 60 235 -10z' fill='url(#i)'><animateTransform attributeName='transform' type='translate' values='0 0;-30 12;0 0' dur='7.5s' repeatCount='indefinite'/></path><circle cx='40' cy='330' r='1.6' fill='#fff'><animate attributeName='opacity' values='1;.2;1' dur='3s' repeatCount='indefinite'/></circle><circle cx='120' cy='300' r='1.2' fill='#cfe0ff'/><circle cx='200' cy='350' r='1.5' fill='#fff'><animate attributeName='opacity' values='.3;1;.3' dur='4s' repeatCount='indefinite'/></circle><circle cx='75' cy='390' r='1.2' fill='#ffe9c9'/><circle cx='165' cy='410' r='1.3' fill='#cfe0ff'><animate attributeName='opacity' values='1;.25;1' dur='2.6s' repeatCount='indefinite'/></circle><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='rgba(120,220,190,.55)' stroke-width='2'/>`),
+    galaxy: () => BK(`<defs><radialGradient id='n1'><stop offset='0' stop-color='#c26bff' stop-opacity='.8'/><stop offset='1' stop-color='#c26bff' stop-opacity='0'/></radialGradient><radialGradient id='n2'><stop offset='0' stop-color='#3f7dff' stop-opacity='.7'/><stop offset='1' stop-color='#3f7dff' stop-opacity='0'/></radialGradient><radialGradient id='n3'><stop offset='0' stop-color='#ff5da2' stop-opacity='.55'/><stop offset='1' stop-color='#ff5da2' stop-opacity='0'/></radialGradient></defs><rect width='240' height='441' fill='#050212'/><g><ellipse cx='80' cy='140' rx='110' ry='60' fill='url(#n1)' transform='rotate(-24 80 140)'/><ellipse cx='170' cy='300' rx='120' ry='70' fill='url(#n2)' transform='rotate(18 170 300)'/><ellipse cx='120' cy='225' rx='80' ry='45' fill='url(#n3)' transform='rotate(-40 120 225)'/><animateTransform attributeName='transform' type='rotate' values='0 120 220.5;7 120 220.5;0 120 220.5' dur='18s' repeatCount='indefinite'/></g><circle cx='30' cy='50' r='1.5' fill='#fff'><animate attributeName='opacity' values='1;.15;1' dur='2.4s' repeatCount='indefinite'/></circle><circle cx='205' cy='80' r='1.2' fill='#cfe0ff'/><circle cx='150' cy='40' r='1' fill='#fff'><animate attributeName='opacity' values='.3;1;.3' dur='3.2s' repeatCount='indefinite'/></circle><circle cx='60' cy='250' r='1.3' fill='#ffd7fa'/><circle cx='100' cy='120' r='1' fill='#fff'/><circle cx='185' cy='180' r='1.4' fill='#fff'><animate attributeName='opacity' values='1;.2;1' dur='2.8s' repeatCount='indefinite'/></circle><circle cx='40' cy='330' r='1.2' fill='#cfe0ff'><animate attributeName='opacity' values='.25;1;.25' dur='3.6s' repeatCount='indefinite'/></circle><circle cx='210' cy='260' r='1' fill='#fff'/><circle cx='140' cy='390' r='1.5' fill='#fff'><animate attributeName='opacity' values='1;.3;1' dur='2.1s' repeatCount='indefinite'/></circle><circle cx='90' cy='415' r='1' fill='#ffe9c9'/><circle cx='190' cy='410' r='1.2' fill='#cfe0ff'/><circle cx='25' cy='170' r='1' fill='#fff'/><rect x='9' y='9' width='222' height='423' rx='12' fill='none' stroke='rgba(150,130,255,.5)' stroke-width='2'/>`),
+  };
+  // encodeURIComponent leaves !'()* alone — escape them too so the URI survives
+  // the unquoted CSS url(...) used for .mini/.kcard backgrounds
+  const encSVG = s => encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16));
+  const backCache = {};
+  function backData(id) {
+    if (id === 'classic' || !BACK_SVGS[id]) return CARD_IMG.BACK;
+    if (!backCache[id]) backCache[id] = 'data:image/svg+xml;utf8,' + encSVG(BACK_SVGS[id]());
+    return backCache[id];
+  }
+  function cardBack() { return backData(equipped.back); }
+
+  function applyBack() {
+    $('menuCards').innerHTML =
+      `<img src="${CARD_IMG.JS}"><img src="${cardBack()}"><img src="${CARD_IMG.JC}">`;
+    if (hands) {
+      const on = chipsOn;
+      renderSeats(currentTurn); renderKitty(kittyState);
+      if (!on) hideChips(); // re-render mustn't reveal chips behind an open menu
+    }
+  }
+  function applyTable() {
+    const t = TABLES.find(x => x.id === equipped.table) || TABLES[0];
+    document.documentElement.className = t.id === 'classic' ? '' : 'tbl-' + t.id;
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', t.theme);
+  }
+  function applyChips() {
+    for (const id of ['dealerChip', 'turnChip']) {
+      const el = $(id);
+      for (const c of CHIPSETS) el.classList.remove('cs-' + c.id);
+      el.classList.add('cs-' + equipped.chips);
+    }
+  }
+
+  function ownedIds(k) { const s = store.get(); return (s && s.owned && s.owned[k]) || []; }
+  const SHOP_CATS = [
+    { okey: 'backs', ekey: 'back', grid: 'shopBacks', items: BACKS, apply: applyBack,
+      prev: it => `<img class="bprev" src="${backData(it.id)}" alt="">` },
+    { okey: 'tables', ekey: 'table', grid: 'shopTables', items: TABLES, apply: applyTable,
+      prev: it => `<span class="tprev" style="background:${it.sw}"></span>` },
+    { okey: 'chips', ekey: 'chips', grid: 'shopChips', items: CHIPSETS, apply: applyChips,
+      prev: it => `<span class="cprev"><span class="pchip d cs-${it.id}">D</span><span class="pchip t cs-${it.id}">T</span></span>` },
+  ];
+
+  function buyItem(cat, it) {
+    const s = store.get() || {};
+    if ((s.coins || 0) < it.price) return;
+    s.coins = (s.coins || 0) - it.price;
+    s.owned = s.owned || {};
+    s.owned[cat.okey] = (s.owned[cat.okey] || []).concat([it.id]);
+    store.set(s);
+    equipItem(cat, it.id);
+  }
+  function equipItem(cat, id) {
+    equipped[cat.ekey] = id;
+    store.set(Object.assign(store.get() || {}, { equipped }));
+    cat.apply();
+    renderShop();
+  }
+  function renderShop() {
+    renderCoins();
+    const coins = getCoins();
+    for (const cat of SHOP_CATS) {
+      const g = $(cat.grid);
+      g.innerHTML = '';
+      for (const it of cat.items) {
+        const own = it.price === 0 || ownedIds(cat.okey).includes(it.id);
+        const eq = equipped[cat.ekey] === it.id;
+        const d = document.createElement('div');
+        d.className = 'shopItem' + (eq ? ' eq' : '');
+        d.innerHTML = cat.prev(it) + `<span class="iname">${it.name}</span>`;
+        const b = document.createElement('button');
+        if (eq) { b.className = 'sbtn on'; b.textContent = 'Equipped ✓'; }
+        else if (own) { b.className = 'sbtn own'; b.textContent = 'Equip'; b.onclick = () => equipItem(cat, it.id); }
+        else if (coins >= it.price) { b.className = 'sbtn'; b.textContent = `Buy ${it.price}🪙`; b.onclick = () => buyItem(cat, it); }
+        else { b.className = 'sbtn cant'; b.textContent = `${it.price}🪙`; }
+        d.appendChild(b);
+        g.appendChild(d);
+      }
+    }
+  }
+  $('shopBtn').onclick = () => { $('menu').classList.remove('show'); renderShop(); $('shop').classList.add('show'); };
+  $('shopBack').onclick = () => { $('shop').classList.remove('show'); showMenu(); };
+
   // ---------- multiplayer core ----------
   function mpSendAll(m) { for (const s in conns) { try { conns[s].send(m); } catch (e) {} } }
   function rotSeat(q, seat) { return q == null ? null : (q - seat + 4) % 4; }
@@ -1490,7 +1852,7 @@ if (typeof module !== 'undefined') {
     if (m.t === 'lobby') renderLobby(m);
     else if (m.t === 'start') {
       matchToken++; matchActive = true; clientPrompt = null;
-      ['menu', 'mpLobby', 'gameover', 'tourOv'].forEach(id => $(id).classList.remove('show'));
+      ['menu', 'settings', 'mpLobby', 'gameover', 'tourOv'].forEach(id => $(id).classList.remove('show'));
       clearTrick(); clearActions();
     } else if (m.t === 'state') clientRender(m.v);
     else if (m.t === 'ev') {
@@ -1503,6 +1865,7 @@ if (typeof module !== 'undefined') {
     } else if (m.t === 'prompt') clientPromptShow(m);
     else if (m.t === 'gameover') {
       matchActive = false;
+      hideChips();
       (m.youWin ? SFX0.win : SFX0.lose)();
       $('goTitle').textContent = m.youWin ? '🏆 You Win!' : 'They Win…';
       $('goScore').textContent = `Final score ${m.score[0]} – ${m.score[1]} · waiting for the host`;
@@ -1654,6 +2017,7 @@ if (typeof module !== 'undefined') {
   function finishTourMatch(won) {
     inTour = false;
     diff = baseDiff;
+    hideChips();
     (won ? SFX.win : SFX.lose)();
     const finalScore = `${score[0]} – ${score[1]}`;
     if (won) {
@@ -1663,9 +2027,11 @@ if (typeof module !== 'undefined') {
         const kind = TROPHY_FOR_SIZE[size];
         tour = null; saveTour(); restoreNames();
         awardTrophy(kind);
+        const gold = TOUR_COINS[size];
+        addCoins(gold);
         $('tourArt').innerHTML = trophySVG(kind);
         $('tourTitle').textContent = 'Champions!';
-        $('tourSub').textContent = `You won the ${size}-team tournament — ${TROPHY_META[kind].name.charAt(0) + TROPHY_META[kind].name.slice(1).toLowerCase()} Trophy earned!`;
+        $('tourSub').textContent = `You won the ${size}-team tournament — ${TROPHY_META[kind].name.charAt(0) + TROPHY_META[kind].name.slice(1).toLowerCase()} Trophy earned! +${gold} gold`;
         $('tourGo').textContent = 'Back to Menu';
         $('tourGo').onclick = () => { $('tourOv').classList.remove('show'); showMenu(); };
         $('tourMenu').style.display = 'none';
@@ -1713,6 +2079,22 @@ if (typeof module !== 'undefined') {
   }
   document.querySelectorAll('.dbtn').forEach(b => b.onclick = () => { setDiff(b.dataset.d); store.set(Object.assign(store.get() || {}, { diff })); });
 
+  // ---------- settings ----------
+  $('setBtn').onclick = () => {
+    const s = store.get();
+    if (s && s.myName) $('nmMe').value = s.myName;
+    $('menu').classList.remove('show');
+    $('settings').classList.add('show');
+  };
+  $('setBack').onclick = () => {
+    readNameInputs();
+    myName = ($('nmMe').value.trim() || myName || 'Player').slice(0, 12);
+    store.set(Object.assign(store.get() || {}, { names: NAMES.slice(), myName }));
+    $('settings').classList.remove('show');
+    showMenu();
+  };
+  $('sndTgl').onclick = () => setMuted(!muted);
+
   $('startBtn').onclick = () => {
     readNameInputs();
     store.set(Object.assign(store.get() || {}, { names: NAMES.slice() }));
@@ -1751,6 +2133,8 @@ if (typeof module !== 'undefined') {
   };
 
   function showMenu() {
+    hideChips();
+    renderCoins();
     const s = store.get();
     const hasTour = s && s.tour;
     $('contBtn').style.display = (hasTour || (s && s.inMatch)) ? 'block' : 'none';
@@ -1758,11 +2142,9 @@ if (typeof module !== 'undefined') {
     $('menu').classList.add('show');
   }
 
-  // menu art
-  $('menuCards').innerHTML =
-    `<img src="${CARD_IMG.JS}"><img src="${CARD_IMG.BACK}"><img src="${CARD_IMG.JC}">`;
-
   const saved = store.get();
+  if (saved && saved.equipped) Object.assign(equipped, saved.equipped);
+  applyTable(); applyChips(); applyBack(); // applyBack also draws the menu art
   if (saved && saved.diff) setDiff(saved.diff);
   if (saved && saved.muted) setMuted(true);
   if (saved && saved.names) {
@@ -1771,6 +2153,7 @@ if (typeof module !== 'undefined') {
       if (NAMES[p] !== DEFAULT_NAMES[p]) $('nm' + p).value = NAMES[p];
     }
   }
+  if (saved && saved.myName) { myName = saved.myName; $('nmMe').value = saved.myName; }
   applyNames();
   updateTrophyBtn();
   showMenu();
