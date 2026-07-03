@@ -563,7 +563,7 @@
     <button class="obtn alt" id="trophyBtn">🔒 Trophy Room</button>
     <button class="obtn alt span2" id="setBtn">⚙️ Settings</button>
   </div>
-  <div class="sub" id="buildTag" style="opacity:.45;font-size:11px">build Jul 03, 12:18 PM</div>
+  <div class="sub" id="buildTag" style="opacity:.45;font-size:11px">build Jul 03, 01:16 PM</div>
 </div>
 
 <div class="overlay" id="settings">
@@ -1304,17 +1304,20 @@ if (typeof module !== 'undefined') {
       const winTeam = won ? 0 : 1;
       for (const s in conns) {
         const seat = +s;
+        const yw = team(seat) === winTeam;
         try {
           conns[s].send({
-            t: 'gameover', youWin: team(seat) === winTeam,
+            t: 'gameover', youWin: yw, coins: yw ? MP_QUICK_COINS : 0,
             score: seat % 2 === 0 ? score : [score[1], score[0]],
           });
         } catch (e) {}
       }
     }
     hideChips();
-    // quick-match win pays by difficulty (solo only — MP AI diff is meaningless vs humans)
-    const reward = won && !mp ? ({ easy: 3, normal: 6, hard: 9, xhard: 12 })[diff] || 0 : 0;
+    // quick-match win pays by difficulty solo; MP pays a flat rate to every human
+    // on the winning side (AI diff is meaningless vs humans) — remote winners get
+    // theirs via the gameover message above, the host takes his here
+    const reward = won ? (mp ? MP_QUICK_COINS : ({ easy: 3, normal: 6, hard: 9, xhard: 12 })[diff] || 0) : 0;
     if (reward) addCoins(reward);
     $('goTitle').textContent = won ? '🏆 You Win!' : 'They Win…';
     $('goScore').textContent = `Final score ${score[0]} – ${score[1]}` + (reward ? ` · +${reward} 🪙` : '');
@@ -1633,6 +1636,7 @@ if (typeof module !== 'undefined') {
 
   // ---------- coins & marketplace ----------
   const TOUR_COINS = { 4: 10, 8: 20, 16: 50 };
+  const MP_QUICK_COINS = 5; // per human on the winning side of an MP quick match
   let equipped = { back: 'classic', table: 'classic', chips: 'classic' };
 
   function getCoins() { const s = store.get(); return (s && s.coins) || 0; }
@@ -1924,7 +1928,36 @@ if (typeof module !== 'undefined') {
     if (document.visibilityState !== 'visible' || !peer) return;
     if (peer.destroyed) { if (mp && mp.mode === 'host') newHostPeer(mp.code, false); }
     else if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} }
+    else if (!matchActive) hostBrokerCheck(); // "open" can lie after a sleep — verify end-to-end
   });
+
+  // The nastiest broker failure is the half-open socket: after a phone sleeps,
+  // the WS can die with NO 'close'/'disconnected' event, so the host still looks
+  // registered while the broker has already expired the table — new joiners get
+  // "Table not found" even though the live P2P conns keep working fine. Re-prove
+  // the registration end-to-end by trying to claim our own id with a throwaway
+  // peer: "unavailable-id" means the broker still knows us (healthy); if the
+  // claim OPENS, our registration was gone — hand the id back and re-host.
+  let brokerProbe = null;
+  function hostBrokerCheck() {
+    if (!mp || mp.mode !== 'host' || !window.Peer || brokerProbe || !peer) return;
+    if (peer.destroyed) { newHostPeer(mp.code, false); return; }
+    if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
+    if (!peer.open) return; // first registration still in flight
+    const code = mp.code, probe = brokerProbe = new Peer(peerId(code));
+    const drop = () => { if (brokerProbe === probe) { brokerProbe = null; try { probe.destroy(); } catch (e) {} } };
+    probe.on('error', drop); // unavailable-id: still registered — the good case
+    probe.on('open', () => {
+      drop(); // release the id…
+      // …and reclaim it with a real host peer. The stale peer is abandoned, NOT
+      // destroyed — destroy() would kill its DataConnections, which are pure P2P
+      // and still carrying the seated players.
+      if (mp && mp.mode === 'host' && mp.code === code && peer) newHostPeer(code, false);
+    });
+    setTimeout(drop, 8000); // no verdict (broker slow/unreachable) — try again next tick
+  }
+  if (TSCALE !== 1) window.__brokerCheck = hostBrokerCheck; // test hook (?fast=1 only)
+  setInterval(() => { if (!matchActive) hostBrokerCheck(); }, 25000);
 
   function setupHostConn(conn) {
     conn.on('data', m => { conn.lastSeen = Date.now(); hostHandle(conn, m); });
@@ -2025,37 +2058,51 @@ if (typeof module !== 'undefined') {
     mpStatus('Joining…');
     try { await loadPeerJS(); } catch (e) { mpStatus(e.message); return; }
     let tries = 0;
-    peer = new Peer();
-    if (TSCALE !== 1) window.__peer = peer; // test hook (?fast=1 only)
+    // One FRESH Peer per dial attempt, each with its own watchdog. The public
+    // broker answers only the FIRST offer to an unregistered dst with EXPIRE and
+    // silently drops later ones — even from a brand-new src id (verified on the
+    // wire vs 0.peerjs.com). So a no-verdict attempt must time out locally, or
+    // the joiner hangs on "retrying…" forever even after the table comes back.
     const dial = () => {
       tries++;
-      const c = peer.connect(peerId(code), { reliable: true });
-      c.on('open', () => {
-        if (mp) { try { c.close(); } catch (e) {} return; } // a slow retry landed after we joined
-        clientConn = c;
-        mp = { mode: 'client', code };
-        c.send({ t: 'hello', name: myName });
-        $('mpSetup').classList.remove('show');
+      if (peer) { try { peer.destroy(); } catch (e) {} }
+      const p = peer = new Peer();
+      if (TSCALE !== 1) window.__peer = p; // test hook (?fast=1 only)
+      let settled = false; // one verdict per attempt (late EXPIREs after the watchdog must not double-dial)
+      const fail = why => {
+        if (settled || mp || peer !== p) return;
+        settled = true;
+        const notFound = why === 'peer-unavailable' || why === 'silence';
+        if (notFound && tries < 3) {
+          // host's phone may have just come back from sleep — give its re-registration a beat
+          mpStatus('Table not answering — retrying…');
+          setTimeout(() => { if (peer === p && !mp) dial(); }, 2000);
+        } else {
+          mpStatus(notFound
+            ? 'Table not found — make sure the host has the game open on their screen, then try Join again.'
+            : 'Connection error: ' + why);
+        }
+      };
+      const dog = setTimeout(() => fail('silence'), 7000);
+      p.on('open', () => {
+        const c = p.connect(peerId(code), { reliable: true });
+        c.on('open', () => {
+          settled = true; clearTimeout(dog);
+          if (mp) { try { c.close(); } catch (e) {} return; } // a slow retry landed after we joined
+          clientConn = c;
+          mp = { mode: 'client', code };
+          c.send({ t: 'hello', name: myName });
+          $('mpSetup').classList.remove('show');
+        });
+        c.on('data', clientHandle);
+        c.on('close', () => {
+          if (mp && mp.mode === 'client' && clientConn === c) { mpTeardown(); say0('Lost connection to the table', 2600, true); showMenu(); }
+        });
       });
-      c.on('data', clientHandle);
-      c.on('close', () => {
-        if (mp && mp.mode === 'client' && clientConn === c) { mpTeardown(); say0('Lost connection to the table', 2600, true); showMenu(); }
-      });
+      p.on('disconnected', () => { try { p.reconnect(); } catch (e) {} }); // broker only — a live game is unaffected
+      p.on('error', e => fail(e.type));
     };
-    peer.on('open', dial);
-    peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} }); // broker only — a live game is unaffected
-    peer.on('error', e => {
-      if (mp) return; // already at the table — a stale dial failing doesn't matter
-      if (e.type === 'peer-unavailable' && tries < 3) {
-        // host's phone may have just come back from sleep — give its re-registration a beat
-        mpStatus('Table not answering — retrying…');
-        setTimeout(() => { if (peer && !peer.destroyed && !mp) dial(); }, 2000);
-      } else {
-        mpStatus(e.type === 'peer-unavailable'
-          ? 'Table not found — make sure the host has the game open on their screen, then try Join again.'
-          : 'Connection error: ' + e.type);
-      }
-    });
+    dial();
   }
 
   // ----- client side -----
@@ -2080,11 +2127,15 @@ if (typeof module !== 'undefined') {
       }
     } else if (m.t === 'prompt') clientPromptShow(m);
     else if (m.t === 'gameover') {
+      // a duplicated gameover must not double-pay: only the first one (overlay
+      // not up yet) carries the coin award
+      const coins = m.youWin && !$('gameover').classList.contains('show') ? m.coins || 0 : 0;
+      if (coins) addCoins(coins);
       matchActive = false;
       hideChips();
       (m.youWin ? SFX0.win : SFX0.lose)();
       $('goTitle').textContent = m.youWin ? '🏆 You Win!' : 'They Win…';
-      $('goScore').textContent = `Final score ${m.score[0]} – ${m.score[1]} · waiting for the host`;
+      $('goScore').textContent = `Final score ${m.score[0]} – ${m.score[1]}` + (coins ? ` · +${coins} 🪙` : '') + ' · waiting for the host';
       $('againBtn').style.display = 'none';
       $('goMenuBtn').textContent = 'Leave Table';
       $('gameover').classList.add('show');
