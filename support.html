@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Euchre Unleashed — Support</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1c2128;
+    --muted: #57606a;
+    --accent: #1a6b3c;
+    --card: #f4f6f8;
+    --border: #d5dbe1;
+    --link: #0b5fa5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181d;
+      --fg: #e4e8ec;
+      --muted: #9aa4ae;
+      --accent: #5fce8e;
+      --card: #1d232a;
+      --border: #313a44;
+      --link: #6cb6ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    font-size: 17px;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 4rem;
+  }
+  h1 {
+    font-size: 1.7rem;
+    line-height: 1.25;
+    margin: 0 0 0.25rem;
+  }
+  .effective {
+    color: var(--muted);
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  h2 {
+    font-size: 1.25rem;
+    margin: 2.25rem 0 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 1.25rem 0 0.4rem;
+  }
+  p, li { color: var(--fg); }
+  ul { padding-left: 1.4rem; }
+  li { margin: 0.35rem 0; }
+  a { color: var(--link); }
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 0 0 1rem;
+  }
+  .summary h2 {
+    border: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+    font-size: 1.1rem;
+  }
+  .summary ul { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Euchre Unleashed — Support</h1>
+  <p class="effective">Developer: Joshua Patterson</p>
+
+  <div class="summary">
+    <h2>Contact</h2>
+    <ul>
+      <li><strong>Email:</strong> <a href="mailto:joshuap968@gmail.com">joshuap968@gmail.com</a></li>
+      <li>Messages are read and answered by the developer, usually within 1–2 business days.</li>
+      <li>Please include your device model and iOS/Android version if you're reporting a problem.</li>
+    </ul>
+  </div>
+
+  <p>Euchre Unleashed is a free euchre card game made by an individual developer. If anything on this page doesn't answer your question, email the address above — real bug reports and suggestions genuinely shape the game.</p>
+
+  <h2>Frequently Asked Questions</h2>
+
+  <h3>How do I play with friends?</h3>
+  <p>From the menu, choose multiplayer and create a table — you'll get a short room code. Share that code with up to three friends; they enter it on their device and connect directly to your game. There are no accounts, friend lists, or matchmaking with strangers.</p>
+
+  <h3>Multiplayer won't connect. What should I check?</h3>
+  <ul>
+    <li>Every player needs an internet connection (Wi-Fi or cellular both work — you do not need to be on the same network).</li>
+    <li>The host should keep the app open in the foreground while others join.</li>
+    <li>Room codes are single-use per table. If a join fails, have the host create a fresh table and share the new code.</li>
+    <li>If a player disconnects mid-game, an AI takes over their seat so the hand can finish.</li>
+  </ul>
+
+  <h3>Does the game work offline?</h3>
+  <p>Yes. Solo play against the AI and tournaments work fully offline. Only online multiplayer needs a connection.</p>
+
+  <h3>How do I restore my purchases (like Remove Ads)?</h3>
+  <p>Open the in-app Shop and tap <strong>Restore Purchases</strong>. Purchases are tied to your Apple or Google account, so they restore on a new device or after a reinstall. If a restore doesn't take, make sure you're signed in with the same store account you bought with, then try again.</p>
+
+  <h3>A purchase didn't go through or coins didn't arrive.</h3>
+  <p>First try Restore Purchases in the Shop. If the problem persists, email the address above with the approximate purchase time and a copy of your App Store or Google Play receipt, and it will be sorted out. Refunds themselves are handled by Apple and Google through their standard processes.</p>
+
+  <h3>What are coins for? Do I have to buy them?</h3>
+  <p>Coins are earned by winning games and tournaments, and they're spent only on cosmetics — card backs, table skins, and chip sets. Optional coin packs exist if you want to speed that up, but no gameplay is ever gated behind a purchase.</p>
+
+  <h3>How do I get rid of ads?</h3>
+  <p>A one-time <strong>Remove Ads</strong> purchase in the Shop disables all ads permanently. It can be restored on any device via Restore Purchases.</p>
+
+  <h3>Is the AI cheating?</h3>
+  <p>No — and this is enforced by automated tests, not just a promise. The AI plays with exactly the information a human in its seat would have: its own hand and the cards played face-up. It never looks at your cards, your partner's, or the kitty. Higher difficulties are better at counting cards and reading the table, not better informed.</p>
+
+  <h3>My game progress disappeared.</h3>
+  <p>Progress, coins, and unlocks are stored locally on your device (there are no accounts or cloud saves). Deleting the app deletes its data, and iOS "Offload App" can also clear website-style storage in some cases. If something looks wrong after an update, email the developer — include what you had and roughly when it vanished.</p>
+
+  <h2>Privacy</h2>
+  <p>The privacy policy is here: <a href="privacy.html">Euchre Unleashed Privacy Policy</a>. Short version: no accounts, no analytics, no developer-run servers storing your data.</p>
+
+  <h2>Contact the Developer</h2>
+  <p>For anything else — bug reports, feature ideas, rule disputes at the kitchen table — email <a href="mailto:joshuap968@gmail.com">joshuap968@gmail.com</a>.</p>
+</main>
+</body>
+</html>
